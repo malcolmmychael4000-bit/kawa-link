@@ -1,11 +1,11 @@
-import { GoogleGenAI } from '@google/genai';
-import { CoffeeListing, CoffeeVariety, CoffeeGrade, UgandaRegion, ListingContact, POPULAR_DISTRICT_REGIONS, UGANDA_REGIONS } from '../types/coffee';
+import { CoffeeListing, CoffeeVariety, CoffeeGrade, UgandaRegion, ListingContact, POPULAR_DISTRICT_REGIONS } from '../types/coffee';
 
 export interface ExtractionResult {
   success: boolean;
   listing: Partial<CoffeeListing>;
   source: 'ai' | 'fallback_rule_engine';
   rawText: string;
+  modelUsed?: string;
   errorMessage?: string;
 }
 
@@ -107,11 +107,9 @@ export function parseInformalMessageLocally(
   }
 
   // 5. Quantity in KG
-  // Matches "300kg", "300 kg", "300 kilos", "300kgs"
-  let quantityKg = 500;
+  let quantityKg = 300;
   const qtyMatch = lower.match(/(\d+[\d,\.]*)\s*(?:kg|kilos?|kgs?|kilograms?)/i) ||
-                   lower.match(/(?:quantity|qty|volume|amount|have|got)\s*(?:is|of|:)?\s*(\d+[\d,\.]*)/i) ||
-                   lower.match(/\b(\d{2,6})\b(?=.*(?:kiboko|faq|parchment|coffee))/i);
+                   lower.match(/(?:quantity|qty|volume|amount|have|got)\s*(?:is|of|:)?\s*(\d+[\d,\.]*)/i);
 
   if (qtyMatch && qtyMatch[1]) {
     const cleanQty = parseFloat(qtyMatch[1].replace(/,/g, ''));
@@ -121,11 +119,9 @@ export function parseInformalMessageLocally(
   }
 
   // 6. Price in UGX per KG
-  // Matches "4500 per kg", "4500 / kg", "4,500/kg", "price 4500", "@ 4500"
   let priceUgx = 4500;
   const priceMatch = lower.match(/(?:price|at|@|for)?\s*(\d+[\d,\.]*)\s*(?:per\s*kg|\/kg|\/kilo|per\s*kilo|ugx|shs|shillings)/i) ||
-                     lower.match(/(\d{3,6})\s*(?:per\s*kg|\/kg)/i) ||
-                     lower.match(/(?:price|rate)\s*(?:is|:)?\s*(\d+[\d,\.]*)/i);
+                     lower.match(/(\d{3,6})\s*(?:per\s*kg|\/kg)/i);
 
   if (priceMatch && priceMatch[1]) {
     const cleanPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
@@ -134,7 +130,7 @@ export function parseInformalMessageLocally(
     }
   }
 
-  // 7. Notes extraction (extract useful details like readiness, quality, delivery)
+  // 7. Notes extraction
   let notes = rawText.trim();
   const readyMatch = rawText.match(/ready\s+[^,.]+/i);
   if (readyMatch) {
@@ -161,14 +157,14 @@ export function parseInformalMessageLocally(
 }
 
 /**
- * Isolated AI Extraction Function
- * Can be swapped easily between models or endpoints.
- * Falls back gracefully to the local rule parser if offline, error, or no key.
+ * Isolated Extraction Function: Calls server-side /api/extract-listing (powered by Gemma 4 / Gemini API)
+ * with graceful fallback to the local rule parser.
  */
 export async function extractListingFromText(
   rawText: string,
   defaultContact?: Partial<ListingContact>,
-  defaultRole?: string
+  defaultRole?: string,
+  preferredModel: string = 'gemma-4-26b-a4b-it'
 ): Promise<ExtractionResult> {
   const trimmed = rawText.trim();
   if (!trimmed) {
@@ -181,93 +177,85 @@ export async function extractListingFromText(
     };
   }
 
-  // Check for API key in environment
-  const apiKey = (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-                 (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY) ||
-                 localStorage.getItem('kawalink_custom_api_key') ||
-                 '';
-
-  if (!apiKey) {
-    // Graceful immediate fallback using Ugandan domain logic
-    const parsed = parseInformalMessageLocally(trimmed, defaultContact, defaultRole);
-    return {
-      success: true,
-      listing: parsed,
-      source: 'fallback_rule_engine',
-      rawText
-    };
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    // Use gemini-3.8-flash for fast text structuring
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: EXTRACTION_SYSTEM_PROMPT },
-            { text: `Informal message to convert:\n"${trimmed}"` }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: 'application/json'
-      }
+    const response = await fetch('/api/extract-listing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: trimmed,
+        defaultContact,
+        defaultRole,
+        preferredModel,
+      }),
     });
 
-    const jsonText = response.text?.trim() || '{}';
-    // Clean potential markdown blocks
-    const cleanJson = jsonText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-    const data = JSON.parse(cleanJson);
-
-    // Validate fields and ensure region matches district
-    let region = data.region as UgandaRegion;
-    let district = (data.district || '').trim();
-    if (!district) district = 'Masaka';
-
-    const distLower = district.toLowerCase();
-    if (POPULAR_DISTRICT_REGIONS[distLower]) {
-      region = POPULAR_DISTRICT_REGIONS[distLower].region;
-    } else if (!region || !['Central', 'Western', 'Eastern', 'Northern'].includes(region)) {
-      region = 'Central';
-    }
-
-    const structuredListing: Partial<CoffeeListing> = {
-      type: (data.type === 'buying' ? 'buying' : 'selling') as 'selling' | 'buying',
-      role: defaultRole || (data.type === 'buying' ? 'Coffee Buyer / Exporter' : 'Farmer / Smallholder'),
-      variety: (['Robusta', 'Arabica', 'Mixed/Other'].includes(data.variety) ? data.variety : 'Robusta') as CoffeeVariety,
-      grade: (['kiboko', 'FAQ', 'parchment', 'green bean', 'other'].includes(data.grade) ? data.grade : 'kiboko') as CoffeeGrade,
-      quantity_kg: Number(data.quantity_kg) || 100,
-      price_ugx_per_kg: Number(data.price_ugx_per_kg) || 4500,
-      region: region,
-      district: district.charAt(0).toUpperCase() + district.slice(1),
-      notes: data.notes || trimmed,
-      contact: {
-        name: defaultContact?.name || 'Local Coffee Producer',
-        phone: defaultContact?.phone || '+256 770 000 000',
-        momo_network: defaultContact?.momo_network || 'MTN MoMo',
-        whatsapp: defaultContact?.whatsapp || defaultContact?.phone || '+256 770 000 000'
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.listing) {
+        return {
+          success: true,
+          listing: data.listing,
+          source: data.source || 'ai',
+          modelUsed: data.modelUsed || preferredModel,
+          rawText,
+        };
       }
-    };
-
-    return {
-      success: true,
-      listing: structuredListing,
-      source: 'ai',
-      rawText
-    };
-  } catch (error: any) {
-    console.warn('AI extraction encountered an error, activating local Ugandan coffee rule engine:', error);
-    // Graceful fallback to rule-based parser on any error
-    const localParsed = parseInformalMessageLocally(trimmed, defaultContact, defaultRole);
-    return {
-      success: true,
-      listing: localParsed,
-      source: 'fallback_rule_engine',
-      rawText,
-      errorMessage: error?.message || 'Offline/Network issue, used local parser'
-    };
+    }
+  } catch (netErr) {
+    console.warn('Network call to /api/extract-listing failed, activating local parser:', netErr);
   }
+
+  // Graceful offline fallback
+  const localParsed = parseInformalMessageLocally(trimmed, defaultContact, defaultRole);
+  return {
+    success: true,
+    listing: localParsed,
+    source: 'fallback_rule_engine',
+    modelUsed: 'local_uganda_coffee_engine',
+    rawText,
+  };
+}
+
+/**
+ * Kahawa AI Plant Pathology & Agronomic Advisory Service
+ */
+export async function askKahawaAdvisor(
+  query: string,
+  region?: string,
+  cropType?: string
+): Promise<{ success: boolean; advice: string; modelUsed: string; source: string }> {
+  try {
+    const response = await fetch('/api/kahawa-advisor', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        region,
+        cropType,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        advice: data.advice,
+        modelUsed: data.modelUsed || 'gemma-4-26b-a4b-it',
+        source: data.source || 'ai',
+      };
+    }
+  } catch (e) {
+    console.warn('Advisor fetch error, returning fallback:', e);
+  }
+
+  return {
+    success: true,
+    advice: `🩺 **Quick Summary / Diagnosis: Local Coffee Advisory**\nFor best coffee tree vigor, prune water sprouts, control shade, and mulch 6 inches away from the tree base.\n\n⚡ **Immediate Action Steps:**\n1. Inspect coffee bushes weekly for Black Twig Borer or Leaf Rust.\n2. Ensure harvested coffee is dried on raised tarpaulins.\n\n🌱 **Prevention & GAP Tip:**\nContact your district agricultural officer or cooperative extension team for UCDA-certified inputs.`,
+    modelUsed: 'local_uganda_coffee_engine',
+    source: 'fallback_rule_engine',
+  };
 }

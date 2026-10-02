@@ -1,110 +1,173 @@
 @import "tailwindcss";
 
 :root {
-  --bg-app: cornsilk;
-  --bg-card: ivory;
-  --color-primary: saddlebrown;
-  --color-accent: forestgreen;
-  --color-dark: black;
-  --color-text-subtle: darkslategray;
-  --border-app: saddlebrown;
-  --gold-accent: darkgoldenrod;
+  /* --- PALETTE: Option B Bugisu Highland (Named CSS Colors) --- */
+  --color-canvas: ivory;
+  --color-surface: white;
+  --color-surface-subtle: linen;
+  --color-text-primary: black;
+  --color-text-secondary: darkslategray;
+  --color-text-inverse: white;
+  --color-brand-primary: darkgreen;
+  --color-brand-accent: saddlebrown;
+  --color-action-primary: forestgreen;
+  --color-action-hover: darkgreen;
+  --color-accent-amber: darkgoldenrod;
+  --color-accent-gold: goldenrod;
+  --color-badge-buy: maroon;
+  --color-badge-sell: darkgreen;
+  --color-badge-robusta: sienna;
+  --color-badge-arabica: darkolivegreen;
+  --color-border: darkgreen;
+  --color-border-subtle: darkslategray;
+  --color-danger: firebrick;
+  --color-success: darkgreen;
+
+  /* --- TYPOGRAPHY SCALE --- */
+  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 26px;
+  --font-weight-regular: 400;
+  --font-weight-bold: 700;
+  --font-weight-black: 900;
+  --line-height-normal: 1.4;
+
+  /* --- SPACING SCALE --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* --- TOUCH TARGETS & RADIUS --- */
+  --touch-target-min: 48px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --border-width: 2px;
 }
 
-/* Base Body Styles */
 html, body {
-  background-color: cornsilk;
-  color: black;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
   margin: 0;
   padding: 0;
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
   max-width: 100vw;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
 }
 
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* High Contrast Bright Sunlight Mode */
-.sunlight-contrast {
-  background-color: white !important;
-  color: black !important;
+/* Base Component Classes */
+.btn-primary {
+  min-height: var(--touch-target-min);
+  background-color: var(--color-action-primary);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--color-brand-primary);
+  padding: var(--space-3) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: var(--font-size-base);
+  transition: background-color 0.15s ease;
 }
 
-.sunlight-contrast .coffee-card {
-  background-color: white !important;
-  border: 2px solid black !important;
-  box-shadow: none !important;
+.btn-primary:hover, .btn-primary:active {
+  background-color: var(--color-action-hover);
 }
 
-.sunlight-contrast .header-bar {
-  background-color: black !important;
-  color: white !important;
-  border-bottom: 2px solid black !important;
+.btn-secondary {
+  min-height: var(--touch-target-min);
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--color-border);
+  padding: var(--space-3) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--font-size-base);
 }
 
-.sunlight-contrast .btn-primary {
-  background-color: black !important;
-  color: white !important;
-  border: 2px solid black !important;
+.card-highland {
+  background-color: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-.sunlight-contrast .btn-secondary {
-  background-color: white !important;
-  color: black !important;
-  border: 2px solid black !important;
+.badge-sell {
+  background-color: var(--color-badge-sell);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-black);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
 }
 
-.sunlight-contrast .badge-sell {
-  background-color: darkgreen !important;
-  color: white !important;
-  border: 1px solid black !important;
+.badge-buy {
+  background-color: var(--color-badge-buy);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-black);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
 }
 
-.sunlight-contrast .badge-buy {
-  background-color: maroon !important;
-  color: white !important;
-  border: 1px solid black !important;
+.badge-robusta {
+  background-color: var(--color-badge-robusta);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
-/* Named Color Utility Styles */
-.bg-cornsilk { background-color: cornsilk; }
-.bg-ivory { background-color: ivory; }
-.bg-saddlebrown { background-color: saddlebrown; }
-.bg-forestgreen { background-color: forestgreen; }
-.bg-darkgreen { background-color: darkgreen; }
-.bg-maroon { background-color: maroon; }
-.bg-darkgoldenrod { background-color: darkgoldenrod; }
-.bg-sienna { background-color: sienna; }
-.bg-darkslategray { background-color: darkslategray; }
-.bg-linen { background-color: linen; }
-.bg-honeydew { background-color: honeydew; }
-.bg-beige { background-color: beige; }
-.bg-goldenrod { background-color: goldenrod; }
+.badge-arabica {
+  background-color: var(--color-badge-arabica);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
 
-.text-saddlebrown { color: saddlebrown; }
-.text-forestgreen { color: forestgreen; }
-.text-darkgreen { color: darkgreen; }
-.text-maroon { color: maroon; }
-.text-darkgoldenrod { color: darkgoldenrod; }
-.text-darkslategray { color: darkslategray; }
-.text-cornsilk { color: cornsilk; }
-.text-ivory { color: ivory; }
-.text-sienna { color: sienna; }
+.badge-grade {
+  background-color: var(--color-surface-subtle);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-subtle);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
 
-.border-saddlebrown { border-color: saddlebrown; }
-.border-forestgreen { border-color: forestgreen; }
-.border-darkgreen { border-color: darkgreen; }
-.border-darkgoldenrod { border-color: darkgoldenrod; }
-.border-maroon { border-color: maroon; }
-.border-darkslategray { border-color: darkslategray; }
-.border-sienna { border-color: sienna; }
-
-/* Custom accessible focus rings */
+/* Accessible focus styling */
 input:focus, select:focus, textarea:focus, button:focus {
-  outline: 3px solid darkgoldenrod !important;
-  outline-offset: 1px;
+  outline: 3px solid var(--color-accent-amber) !important;
+  outline-offset: 2px;
 }

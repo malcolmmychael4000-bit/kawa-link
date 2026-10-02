@@ -20,38 +20,75 @@ import {
   Phone, 
   MessageSquare, 
   MapPin, 
-  Tag, 
   CheckCircle2, 
   Sparkles, 
   Filter, 
   PlusCircle, 
   User, 
-  Sun, 
-  Moon, 
   RefreshCw, 
-  TrendingUp, 
-  ShieldCheck, 
   Layers, 
-  ChevronRight, 
   X, 
-  ExternalLink,
-  SlidersHorizontal,
-  Info
+  Search, 
+  ShieldAlert, 
+  ArrowUpDown, 
+  Trash2, 
+  Edit3, 
+  Home, 
+  ListFilter, 
+  Check, 
+  AlertTriangle,
+  Scale,
+  Calendar,
+  DollarSign
 } from 'lucide-react';
 
 const STORAGE_LISTINGS_KEY = 'kawalink_listings_v1';
 const STORAGE_PROFILE_KEY = 'kawalink_user_profile_v1';
 const STORAGE_REVEALED_KEY = 'kawalink_revealed_contacts_v1';
-const STORAGE_SUNLIGHT_KEY = 'kawalink_sunlight_mode_v1';
+const STORAGE_ONBOARDED_KEY = 'kawalink_onboarded_v1';
+
+// Role Definitions for Welcome / Profile
+const ROLE_OPTIONS = [
+  {
+    id: 'Farmer / Smallholder',
+    title: 'Farmer / Smallholder',
+    icon: '🌾',
+    desc: 'I grow and harvest coffee cherries (Robusta or Arabica)'
+  },
+  {
+    id: 'Cooperative Union',
+    title: 'Cooperative / Society',
+    icon: '🏢',
+    desc: 'We aggregate, mill, and trade coffee on behalf of members'
+  },
+  {
+    id: 'Coffee Buyer / Exporter',
+    title: 'Coffee Buyer / Exporter',
+    icon: '📦',
+    desc: 'I source Kiboko, FAQ, parchment, or green beans for local or export trade'
+  },
+  {
+    id: 'Input / Equipment Supplier',
+    title: 'Input / Equipment Supplier',
+    icon: '🚜',
+    desc: 'I provide seedlings, organic fertilizer, tarpaulins, or hulling machinery'
+  },
+  {
+    id: 'Extension Officer',
+    title: 'Extension Officer / NGO',
+    icon: '🔬',
+    desc: 'I provide agronomic advice, GAP training, quality certification, and support'
+  }
+];
 
 export default function App() {
-  // --- State Initialization ---
+  // --- Persistent State ---
   const [listings, setListings] = useState<CoffeeListing[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_LISTINGS_KEY);
       if (saved) return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to load listings from storage', e);
+      console.error(e);
     }
     return INITIAL_MOCK_LISTINGS;
   });
@@ -61,10 +98,10 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_PROFILE_KEY);
       if (saved) return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to load profile from storage', e);
+      console.error(e);
     }
     return {
-      name: 'Masaka Coffee Grower',
+      name: 'Masaka Coffee Grower 14',
       role: 'Farmer / Smallholder',
       district: 'Masaka',
       region: 'Central',
@@ -74,111 +111,96 @@ export default function App() {
     };
   });
 
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(() => {
+    return localStorage.getItem(STORAGE_ONBOARDED_KEY) === 'true';
+  });
+
   const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_REVEALED_KEY);
       if (saved) return JSON.parse(saved);
     } catch (e) {
-      console.error('Failed to load revealed contacts', e);
+      console.error(e);
     }
     return {};
   });
 
-  const [sunlightMode, setSunlightMode] = useState<boolean>(() => {
-    return localStorage.getItem(STORAGE_SUNLIGHT_KEY) === 'true';
-  });
+  // --- Active Navigation Tab: 4 items (Home, Post, My Listings, Profile) ---
+  const [activeTab, setActiveTab] = useState<'home' | 'post' | 'my-listings' | 'profile'>('home');
 
-  // UI Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'board' | 'create' | 'profile'>('board');
-  const [showProfileModal, setShowProfileModal] = useState(false);
-
-  // Filters State
-  const [filterType, setFilterType] = useState<string>('all'); // all, selling, buying
+  // --- Filtering & Sorting State ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'selling' | 'buying'>('all');
   const [filterRegion, setFilterRegion] = useState<string>('all');
   const [filterVariety, setFilterVariety] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
-  const [searchDistrict, setSearchDistrict] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'newest' | 'price-asc' | 'price-desc' | 'qty-desc'>('newest');
 
-  // AI & Creation State
-  const [informalInput, setInformalInput] = useState<string>('');
-  const [isExtracting, setIsExtracting] = useState<boolean>(false);
-  const [extractionFeedback, setExtractionFeedback] = useState<{ source: string; message: string } | null>(null);
-  const [useManualFormOnly, setUseManualFormOnly] = useState<boolean>(false);
+  // --- Post / AI Extraction State ---
+  const [informalMessage, setInformalMessage] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
   const [draftListing, setDraftListing] = useState<Partial<CoffeeListing> | null>(null);
+  const [isManualForm, setIsManualForm] = useState(false);
 
-  // Notification / Toast
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // --- Toast Notification ---
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'info' | 'error' } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  // Sync to LocalStorage
+  // Sync state to LocalStorage
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_LISTINGS_KEY, JSON.stringify(listings));
-    } catch (e) {
-      console.error(e);
-    }
+    localStorage.setItem(STORAGE_LISTINGS_KEY, JSON.stringify(listings));
   }, [listings]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(profile));
-    } catch (e) {
-      console.error(e);
-    }
+    localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(profile));
   }, [profile]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_REVEALED_KEY, JSON.stringify(revealedContacts));
-    } catch (e) {
-      console.error(e);
-    }
+    localStorage.setItem(STORAGE_REVEALED_KEY, JSON.stringify(revealedContacts));
   }, [revealedContacts]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_SUNLIGHT_KEY, String(sunlightMode));
-    if (sunlightMode) {
-      document.documentElement.classList.add('sunlight-contrast');
-    } else {
-      document.documentElement.classList.remove('sunlight-contrast');
-    }
-  }, [sunlightMode]);
+    localStorage.setItem(STORAGE_ONBOARDED_KEY, String(hasCompletedOnboarding));
+  }, [hasCompletedOnboarding]);
 
-  // Handle Express Interest
-  const handleExpressInterest = (id: string, contactName: string) => {
+  // Reveal Contact handler
+  const handleExpressInterest = (id: string, name: string) => {
     setRevealedContacts(prev => ({ ...prev, [id]: true }));
-    showToast(`Contact revealed for ${contactName}! You can now call or WhatsApp directly.`);
+    showToast(`Contact revealed for ${name}! Please verify quality before sending Mobile Money.`, 'info');
   };
 
-  // Handle AI Extraction
-  const handleAiExtract = async () => {
-    if (!informalInput.trim()) {
-      showToast('Please paste or type an informal message first.');
+  // AI Extraction handler
+  const handleExtractMessage = async (textToExtract?: string) => {
+    const raw = (textToExtract || informalMessage).trim();
+    if (!raw) {
+      showToast('Please paste a message first.', 'error');
       return;
     }
 
     setIsExtracting(true);
-    setExtractionFeedback(null);
+    setExtractionError(null);
 
     try {
-      const res: ExtractionResult = await extractListingFromText(
-        informalInput,
+      const result: ExtractionResult = await extractListingFromText(
+        raw,
         {
           name: profile.name,
           phone: profile.phone,
           momo_network: profile.momo_network,
           whatsapp: profile.phone
         },
-        profile.role
+        profile.role,
+        'gemma-4-26b-a4b-it'
       );
 
-      if (res.success && res.listing) {
+      if (result.success && result.listing) {
         setDraftListing({
-          ...res.listing,
+          ...result.listing,
           contact: {
             name: profile.name || 'Coffee Trader',
             phone: profile.phone || '+256 770 000 000',
@@ -186,38 +208,21 @@ export default function App() {
             whatsapp: profile.phone || '+256 770 000 000'
           }
         });
-
-        if (res.source === 'ai') {
-          setExtractionFeedback({
-            source: 'AI (Gemini/Gemma)',
-            message: 'Extracted structured coffee specifications using AI.'
-          });
-        } else {
-          setExtractionFeedback({
-            source: 'Uganda Coffee Rule Engine (Offline/Local)',
-            message: 'Extracted structured specifications using local Ugandan coffee standards.'
-          });
-        }
+        setIsManualForm(false);
       } else {
-        setExtractionFeedback({
-          source: 'Manual Needed',
-          message: res.errorMessage || 'Could not automatically structure message. Please use manual form.'
-        });
-        setUseManualFormOnly(true);
+        setExtractionError(result.errorMessage || 'AI extraction could not structure text.');
+        setIsManualForm(true);
       }
     } catch (err: any) {
-      setExtractionFeedback({
-        source: 'Error Fallback',
-        message: 'Extractor encountered an issue. Switched to manual entry form.'
-      });
-      setUseManualFormOnly(true);
+      setExtractionError('Extraction could not connect. You can review or fill fields manually below.');
+      setIsManualForm(true);
     } finally {
       setIsExtracting(false);
     }
   };
 
-  // Initialize manual draft
-  const handleStartManual = () => {
+  // Initialize empty manual form
+  const handleOpenManualForm = () => {
     setDraftListing({
       type: 'selling',
       role: profile.role || 'Farmer / Smallholder',
@@ -235,23 +240,23 @@ export default function App() {
       },
       notes: ''
     });
-    setUseManualFormOnly(true);
+    setIsManualForm(true);
   };
 
-  // Save new listing
-  const handleSaveListing = () => {
+  // Publish listing
+  const handlePublishListing = () => {
     if (!draftListing) return;
 
     if (!draftListing.quantity_kg || draftListing.quantity_kg <= 0) {
-      showToast('Please enter a valid quantity in kg.');
+      showToast('Please enter a valid quantity in kg.', 'error');
       return;
     }
     if (!draftListing.price_ugx_per_kg || draftListing.price_ugx_per_kg <= 0) {
-      showToast('Please enter a valid price in UGX per kg.');
+      showToast('Please enter a valid price in UGX per kg.', 'error');
       return;
     }
     if (!draftListing.district) {
-      showToast('Please specify a district.');
+      showToast('Please specify a district.', 'error');
       return;
     }
 
@@ -271,333 +276,723 @@ export default function App() {
         momo_network: draftListing.contact?.momo_network || profile.momo_network || 'MTN MoMo',
         whatsapp: draftListing.contact?.whatsapp || profile.phone
       },
-      notes: draftListing.notes || 'Posted via KawaLink',
+      notes: draftListing.notes || 'Posted on KawaLink Uganda',
       created_at: new Date().toISOString(),
       verified_farmer: profile.role.includes('Farmer')
     };
 
     setListings([newListing, ...listings]);
     setDraftListing(null);
-    setInformalInput('');
-    setExtractionFeedback(null);
-    setActiveTab('board');
+    setInformalMessage('');
+    setActiveTab('home');
     showToast('Listing posted successfully to KawaLink board!');
   };
 
-  // Reset to initial mock data
-  const handleResetData = () => {
-    if (confirm('Reset board back to standard 8 Ugandan mock listings?')) {
-      setListings(INITIAL_MOCK_LISTINGS);
-      setRevealedContacts({});
-      showToast('Listings reset to initial Ugandan coffee board.');
+  // Delete own listing
+  const handleDeleteListing = (id: string) => {
+    if (confirm('Are you sure you want to remove this listing?')) {
+      setListings(listings.filter(l => l.id !== id));
+      showToast('Listing removed.');
     }
   };
 
-  // Filter listings
+  // Filter & Sort computations
   const filteredListings = useMemo(() => {
-    return listings.filter(item => {
-      if (filterType !== 'all' && item.type !== filterType) return false;
-      if (filterRegion !== 'all' && item.region !== filterRegion) return false;
-      if (filterVariety !== 'all' && item.variety !== filterVariety) return false;
-      if (filterGrade !== 'all' && item.grade !== filterGrade) return false;
-      if (searchDistrict.trim()) {
-        const query = searchDistrict.toLowerCase();
-        const matchesDistrict = item.district.toLowerCase().includes(query);
-        const matchesNotes = item.notes.toLowerCase().includes(query);
-        const matchesRole = item.role.toLowerCase().includes(query);
-        if (!matchesDistrict && !matchesNotes && !matchesRole) return false;
-      }
-      return true;
-    });
-  }, [listings, filterType, filterRegion, filterVariety, filterGrade, searchDistrict]);
+    return listings
+      .filter(item => {
+        if (filterType !== 'all' && item.type !== filterType) return false;
+        if (filterRegion !== 'all' && item.region !== filterRegion) return false;
+        if (filterVariety !== 'all' && item.variety !== filterVariety) return false;
+        if (filterGrade !== 'all' && item.grade !== filterGrade) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchDist = item.district.toLowerCase().includes(q);
+          const matchNotes = item.notes.toLowerCase().includes(q);
+          const matchRole = item.role.toLowerCase().includes(q);
+          if (!matchDist && !matchNotes && !matchRole) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'price-asc') return a.price_ugx_per_kg - b.price_ugx_per_kg;
+        if (sortBy === 'price-desc') return b.price_ugx_per_kg - a.price_ugx_per_kg;
+        if (sortBy === 'qty-desc') return b.quantity_kg - a.quantity_kg;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+  }, [listings, filterType, filterRegion, filterVariety, filterGrade, searchQuery, sortBy]);
+
+  // My listings computation
+  const myListings = useMemo(() => {
+    return listings.filter(item => item.contact.phone === profile.phone || item.contact.name === profile.name);
+  }, [listings, profile]);
 
   return (
-    <div className={`min-h-screen pb-16 ${sunlightMode ? 'bg-white text-black' : 'bg-cornsilk text-black'}`}>
+    <div className="min-h-screen flex flex-col bg-[var(--color-canvas)] text-[var(--color-text-primary)]">
       
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-saddlebrown text-cornsilk rounded shadow-lg border-2 border-darkgoldenrod text-sm font-semibold max-w-[90vw] text-center">
-          {toastMessage}
+      {/* Toast Alert */}
+      {toast && (
+        <div 
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-md shadow-lg border-2 text-sm font-bold max-w-[92vw] text-center flex items-center gap-2"
+          style={{
+            backgroundColor: toast.type === 'error' ? 'var(--color-danger)' : 'var(--color-brand-primary)',
+            color: 'var(--color-text-inverse)',
+            borderColor: 'var(--color-accent-amber)'
+          }}
+        >
+          {toast.type === 'error' ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+          <span>{toast.message}</span>
         </div>
       )}
 
-      {/* TOP HEADER - Mobile-First & High Contrast */}
-      <header className={`sticky top-0 z-40 px-3 py-3 border-b-2 shadow-sm ${
-        sunlightMode ? 'bg-black text-white border-black' : 'bg-saddlebrown text-cornsilk border-darkgoldenrod'
-      }`}>
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
-          {/* Logo & Identity */}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('board')}>
-            <div className={`w-9 h-9 rounded flex items-center justify-center font-black text-lg ${
-              sunlightMode ? 'bg-white text-black' : 'bg-forestgreen text-white border border-darkgoldenrod'
-            }`}>
+      {/* TOP HEADER */}
+      <header className="sticky top-0 z-40 bg-[var(--color-brand-primary)] text-[var(--color-text-inverse)] border-b-2 border-[var(--color-accent-amber)] px-4 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+          {/* Logo & Subtitle */}
+          <div 
+            className="flex items-center gap-2.5 cursor-pointer"
+            onClick={() => setActiveTab('home')}
+          >
+            <div className="w-10 h-10 rounded-md bg-[var(--color-surface)] text-[var(--color-brand-primary)] flex items-center justify-center font-black text-xl border border-[var(--color-accent-amber)]">
               ☕
             </div>
             <div>
-              <div className="flex items-center gap-1">
-                <span className="font-extrabold tracking-tight text-lg">KawaLink</span>
-                <span className="text-xs px-1.5 py-0.2 rounded font-bold uppercase bg-forestgreen text-white">
-                  Uganda
-                </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-xl tracking-tight leading-none">KawaLink</span>
+                <span className="badge-sell text-[10px] px-1.5 py-0.5">Uganda</span>
               </div>
-              <p className="text-[11px] opacity-90 leading-tight">Coffee Trade Board • Low-Bandwidth</p>
+              <p className="text-xs text-[var(--color-surface-subtle)] opacity-90 mt-0.5 leading-tight">
+                Coffee Marketplace • Mobile-First
+              </p>
             </div>
           </div>
 
-          {/* Action Tools */}
-          <div className="flex items-center gap-1.5">
-            {/* Sunlight Mode Toggle */}
+          {/* User Role Badge */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setSunlightMode(!sunlightMode)}
-              title="Toggle Bright Sunlight High Contrast Mode"
-              className={`px-2 py-1 text-xs font-bold rounded flex items-center gap-1 border ${
-                sunlightMode 
-                  ? 'bg-white text-black border-white' 
-                  : 'bg-darkgoldenrod text-black border-darkgoldenrod hover:bg-goldenrod'
-              }`}
-            >
-              {sunlightMode ? <Sun size={14} className="stroke-[2.5]" /> : <Sun size={14} />}
-              <span className="hidden sm:inline">{sunlightMode ? 'Sun Mode ON' : 'Sun Mode'}</span>
-            </button>
-
-            {/* Profile Avatar / Trigger */}
-            <button
-              onClick={() => setShowProfileModal(true)}
-              className={`px-2 py-1 text-xs font-bold rounded flex items-center gap-1 border ${
-                sunlightMode
-                  ? 'bg-black text-white border-white'
-                  : 'bg-forestgreen text-white border-forestgreen hover:bg-darkgreen'
-              }`}
+              onClick={() => setActiveTab('profile')}
+              className="text-xs font-bold px-3 py-1.5 rounded-md border border-[var(--color-surface-subtle)] bg-[var(--color-action-active)] hover:bg-[var(--color-action-primary)] text-white flex items-center gap-1.5"
             >
               <User size={14} />
-              <span className="max-w-[70px] truncate sm:max-w-none">{profile.role.split(' ')[0]}</span>
+              <span className="max-w-[100px] truncate">{profile.role.split(' ')[0]}</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* QUICK ROLE & REGION STATUS BAR */}
-      <div className={`px-3 py-1.5 text-xs border-b ${
-        sunlightMode ? 'bg-white text-black border-black font-bold' : 'bg-beige text-darkslategray border-saddlebrown'
-      }`}>
-        <div className="max-w-2xl mx-auto flex items-center justify-between flex-wrap gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-black">Active Profile:</span>
-            <span className="font-bold underline cursor-pointer" onClick={() => setShowProfileModal(true)}>
-              {profile.name} ({profile.role})
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-0.5">
-              <MapPin size={12} /> {profile.district} ({profile.region})
-            </span>
+      {/* SUB-HEADER: Active District & UCDA Pricing Benchmark Bar */}
+      <div className="bg-[var(--color-surface-subtle)] border-b border-[var(--color-border-subtle)] px-4 py-2 text-xs">
+        <div className="max-w-3xl mx-auto flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-1 font-semibold text-[var(--color-text-secondary)]">
+            <MapPin size={13} className="text-[var(--color-brand-primary)]" />
+            <span>Market Region: <strong className="text-black">{profile.district} ({profile.region})</strong></span>
           </div>
-          <button 
-            onClick={() => setShowProfileModal(true)} 
-            className="text-[11px] underline font-bold text-saddlebrown hover:text-black"
-          >
-            Change Role
-          </button>
+          <div className="text-[11px] font-bold text-[var(--color-brand-primary)] flex items-center gap-1">
+            <span>UCDA Benchmark: Robusta Kiboko ~4,500 UGX • FAQ ~11,500 UGX</span>
+          </div>
         </div>
       </div>
 
-      {/* NAVIGATION BAR - 3 Main Tabs */}
-      <nav className="max-w-2xl mx-auto px-3 pt-3">
-        <div className={`grid grid-cols-2 gap-2 p-1 rounded border-2 ${
-          sunlightMode ? 'bg-white border-black' : 'bg-ivory border-saddlebrown'
-        }`}>
-          <button
-            onClick={() => { setActiveTab('board'); setDraftListing(null); }}
-            className={`py-2 px-3 text-sm font-extrabold rounded flex items-center justify-center gap-1.5 transition-colors ${
-              activeTab === 'board'
-                ? (sunlightMode ? 'bg-black text-white' : 'bg-forestgreen text-white shadow-sm')
-                : (sunlightMode ? 'text-black hover:bg-gray-100' : 'text-saddlebrown hover:bg-beige')
-            }`}
-          >
-            <Layers size={16} />
-            Browse Board ({listings.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab('create')}
-            className={`py-2 px-3 text-sm font-extrabold rounded flex items-center justify-center gap-1.5 transition-colors ${
-              activeTab === 'create'
-                ? (sunlightMode ? 'bg-black text-white' : 'bg-saddlebrown text-cornsilk shadow-sm')
-                : (sunlightMode ? 'text-black hover:bg-gray-100' : 'text-saddlebrown hover:bg-beige')
-            }`}
-          >
-            <PlusCircle size={16} />
-            Post Coffee / AI
-          </button>
-        </div>
-      </nav>
-
-      {/* MAIN CONTENT AREA */}
-      <main className="max-w-2xl mx-auto px-3 pt-3">
+      {/* MAIN CONTENT CONTAINER */}
+      <main className="flex-1 max-w-3xl w-full mx-auto p-3 sm:p-4 pb-24">
         
         {/* ============================================================== */}
-        {/* TAB 1: POST / CONVERT INFORMAL COFFEE MESSAGE (AI + MANUAL)    */}
+        {/* SCREEN 1: WELCOME & ROLE SELECTION (FIRST RUN OR PROFILE TAB) */}
         {/* ============================================================== */}
-        {activeTab === 'create' && (
+        {activeTab === 'profile' && (
+          <div className="space-y-4">
+            <div className="card-highland">
+              <h2 className="font-extrabold text-xl mb-1 text-[var(--color-brand-primary)]">
+                {hasCompletedOnboarding ? 'Edit Your Profile' : 'Welcome to KawaLink Uganda'}
+              </h2>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+                Choose your role in the coffee value chain. Your contact details remain protected and are only shown when another user expresses interest.
+              </p>
+
+              {/* 5 Friendly Role Selection Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-5">
+                {ROLE_OPTIONS.map((roleOpt) => {
+                  const isSelected = profile.role === roleOpt.id;
+                  return (
+                    <div
+                      key={roleOpt.id}
+                      onClick={() => setProfile({ ...profile, role: roleOpt.id })}
+                      className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all ${
+                        isSelected 
+                          ? 'border-[var(--color-brand-primary)] bg-[var(--color-surface-subtle)] shadow-sm' 
+                          : 'border-[var(--color-border-subtle)] bg-[var(--color-surface)] hover:border-[var(--color-brand-primary)]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-2xl">{roleOpt.icon}</span>
+                        <span className="font-black text-base">{roleOpt.title}</span>
+                        {isSelected && <Check className="ml-auto text-[var(--color-brand-primary)] stroke-[3]" size={18} />}
+                      </div>
+                      <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                        {roleOpt.desc}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Simple Profile Form */}
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setHasCompletedOnboarding(true);
+                  setActiveTab('home');
+                  showToast('Profile saved! You can now browse and post on the board.');
+                }}
+                className="space-y-3.5 pt-3 border-t border-[var(--color-border-subtle)]"
+              >
+                <div>
+                  <label className="block text-xs font-black uppercase mb-1">
+                    Your Name or Cooperative Handle:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={profile.name}
+                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                    placeholder="e.g. Masaka Coffee Grower 14"
+                    className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white text-base font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase mb-1">
+                      Region in Uganda:
+                    </label>
+                    <select
+                      value={profile.region}
+                      onChange={(e) => {
+                        const newReg = e.target.value as UgandaRegion;
+                        const defaultDist = UGANDA_REGIONS[newReg]?.[0] || 'Masaka';
+                        setProfile({ ...profile, region: newReg, district: defaultDist });
+                      }}
+                      className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white text-base font-bold"
+                    >
+                      <option value="Central">Central (Masaka, Luwero, Mukono)</option>
+                      <option value="Western">Western (Mbarara, Kasese, Bushenyi)</option>
+                      <option value="Eastern">Eastern (Mbale, Kapchorwa, Mt Elgon)</option>
+                      <option value="Northern">Northern (Arua, Nebbi, West Nile)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase mb-1">
+                      District:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={profile.district}
+                      onChange={(e) => setProfile({ ...profile, district: e.target.value })}
+                      placeholder="e.g. Masaka, Mbale, Kasese..."
+                      className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white text-base font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase mb-1">
+                      Phone Number (Calls & WhatsApp):
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={profile.phone}
+                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      placeholder="+256 772 000 000"
+                      className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white font-mono text-base font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase mb-1">
+                      Mobile Money Network:
+                    </label>
+                    <select
+                      value={profile.momo_network}
+                      onChange={(e) => setProfile({ ...profile, momo_network: e.target.value as any })}
+                      className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white text-base font-bold"
+                    >
+                      <option value="MTN MoMo">MTN MoMo</option>
+                      <option value="Airtel Money">Airtel Money</option>
+                      <option value="Both">Both MTN & Airtel</option>
+                      <option value="Cash / Bank">Cash / Bank Transfer</option>
+                    </select>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[var(--color-text-secondary)] italic">
+                  🔒 Helper note: Your phone number is never shown publicly to protect you from spam. Buyers or sellers only reveal it when clicking "Express interest".
+                </p>
+
+                {/* Primary Action Button */}
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="btn-primary w-full text-base"
+                  >
+                    Save Profile & Enter Marketplace
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* SCREEN 2 & 4: HOME / LISTINGS BOARD & CONTACT REVEAL          */}
+        {/* ============================================================== */}
+        {activeTab === 'home' && (
           <div className="space-y-4">
             
-            {/* Header / Intro Banner */}
-            <div className={`p-3 rounded border-2 ${
-              sunlightMode ? 'bg-white border-black' : 'bg-ivory border-saddlebrown'
-            }`}>
-              <div className="flex items-start gap-2">
-                <Sparkles className="text-darkgoldenrod shrink-0 mt-0.5" size={20} />
+            {/* Filter & Search Bar */}
+            <div className="card-highland space-y-3">
+              {/* Search text input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search district, road, or cooperative (e.g. Masaka, Mbale)..."
+                  className="w-full pl-9 pr-4 py-2.5 rounded-md border-2 border-[var(--color-border)] bg-white text-base"
+                />
+                <Search size={18} className="absolute left-3 top-3.5 text-[var(--color-text-secondary)]" />
+              </div>
+
+              {/* Quick Type Chips: All, Selling, Buying */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'all', label: 'All Listings' },
+                  { id: 'selling', label: '🟢 For Sale' },
+                  { id: 'buying', label: '🔴 Wanted' }
+                ].map(typeTab => (
+                  <button
+                    key={typeTab.id}
+                    onClick={() => setFilterType(typeTab.id as any)}
+                    className={`py-2 px-2 text-xs font-black rounded-md border-2 transition-all ${
+                      filterType === typeTab.id
+                        ? 'bg-[var(--color-brand-primary)] text-white border-[var(--color-brand-primary)]'
+                        : 'bg-white text-black border-[var(--color-border-subtle)] hover:bg-[var(--color-surface-subtle)]'
+                    }`}
+                  >
+                    {typeTab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Dropdown Filters: Region, Variety, Grade, Sort */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 <div>
-                  <h2 className="font-extrabold text-base leading-snug">
-                    AI Listing Extractor (Gemma / Ugandan Standards)
-                  </h2>
-                  <p className="text-xs text-darkslategray mt-0.5">
-                    Paste an informal WhatsApp message, SMS, or trade note. The system converts it into a structured coffee trade listing for free.
-                  </p>
+                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-secondary)] mb-0.5">Region:</label>
+                  <select
+                    value={filterRegion}
+                    onChange={(e) => setFilterRegion(e.target.value)}
+                    className="w-full p-2 rounded-md border border-[var(--color-border)] bg-white font-semibold"
+                  >
+                    <option value="all">All Regions</option>
+                    <option value="Central">Central</option>
+                    <option value="Western">Western</option>
+                    <option value="Eastern">Eastern</option>
+                    <option value="Northern">Northern</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-secondary)] mb-0.5">Variety:</label>
+                  <select
+                    value={filterVariety}
+                    onChange={(e) => setFilterVariety(e.target.value)}
+                    className="w-full p-2 rounded-md border border-[var(--color-border)] bg-white font-semibold"
+                  >
+                    <option value="all">All Varieties</option>
+                    <option value="Robusta">Robusta</option>
+                    <option value="Arabica">Arabica</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-secondary)] mb-0.5">Grade:</label>
+                  <select
+                    value={filterGrade}
+                    onChange={(e) => setFilterGrade(e.target.value)}
+                    className="w-full p-2 rounded-md border border-[var(--color-border)] bg-white font-semibold"
+                  >
+                    <option value="all">All Grades</option>
+                    <option value="kiboko">kiboko (dry cherry)</option>
+                    <option value="FAQ">FAQ (fair average)</option>
+                    <option value="parchment">parchment</option>
+                    <option value="green bean">green bean</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-secondary)] mb-0.5">Sort by:</label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="w-full p-2 rounded-md border border-[var(--color-border)] bg-white font-semibold"
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="price-asc">Price: Low to High</option>
+                    <option value="price-desc">Price: High to Low</option>
+                    <option value="qty-desc">Quantity: High to Low</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Acceptance Test Example Pre-fills */}
-              <div className="mt-3 pt-2.5 border-t border-dashed border-saddlebrown">
-                <span className="text-[11px] font-bold block mb-1">Tap a sample Ugandan message to test:</span>
+              {/* Reset link if filters active */}
+              {(filterType !== 'all' || filterRegion !== 'all' || filterVariety !== 'all' || filterGrade !== 'all' || searchQuery) && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={() => {
+                      setFilterType('all');
+                      setFilterRegion('all');
+                      setFilterVariety('all');
+                      setFilterGrade('all');
+                      setSearchQuery('');
+                      setSortBy('newest');
+                    }}
+                    className="text-xs font-bold text-[var(--color-danger)] underline cursor-pointer"
+                  >
+                    Clear All Filters
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Results Count Summary */}
+            <div className="flex items-center justify-between text-xs px-1 font-bold text-[var(--color-text-secondary)]">
+              <span>Showing {filteredListings.length} of {listings.length} listings</span>
+              <span>All prices in UGX / kg</span>
+            </div>
+
+            {/* SYSTEM STATE: EMPTY STATE */}
+            {filteredListings.length === 0 && (
+              <div className="card-highland text-center py-10 px-4">
+                <div className="text-4xl mb-2">🌱</div>
+                <h3 className="font-extrabold text-lg text-[var(--color-brand-primary)] mb-1">
+                  No coffee listings match your filters
+                </h3>
+                <p className="text-sm text-[var(--color-text-secondary)] max-w-sm mx-auto mb-4">
+                  Try clearing your search or filters to see more coffee offers across Uganda.
+                </p>
+                <button
+                  onClick={() => {
+                    setFilterType('all');
+                    setFilterRegion('all');
+                    setFilterVariety('all');
+                    setFilterGrade('all');
+                    setSearchQuery('');
+                  }}
+                  className="btn-primary"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+
+            {/* LISTINGS CARD FEED */}
+            <div className="space-y-3.5">
+              {filteredListings.map((item) => {
+                const isContactRevealed = !!revealedContacts[item.id];
+                const totalEstimatedValue = item.quantity_kg * item.price_ugx_per_kg;
+
+                return (
+                  <article 
+                    key={item.id}
+                    className="card-highland transition-all hover:border-[var(--color-accent-amber)]"
+                  >
+                    {/* Header Row: Type tag, Variety/Grade chips, Posted Time */}
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.type === 'selling' ? (
+                          <span className="badge-sell">🟢 Selling</span>
+                        ) : (
+                          <span className="badge-buy">🔴 Buying</span>
+                        )}
+
+                        <span className={item.variety === 'Robusta' ? 'badge-robusta' : 'badge-arabica'}>
+                          {item.variety}
+                        </span>
+
+                        <span className="badge-grade">
+                          {item.grade}
+                        </span>
+                      </div>
+
+                      <span className="text-xs text-[var(--color-text-secondary)] font-medium">
+                        {item.district} ({item.region})
+                      </span>
+                    </div>
+
+                    {/* Primary Specs in 3-Second Hierarchy: Price & Quantity */}
+                    <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 py-2 border-y border-[var(--color-surface-subtle)] my-2">
+                      <div>
+                        {/* Price per KG in Bold Tabular */}
+                        <div className="text-2xl font-black text-[var(--color-brand-primary)] tracking-tight">
+                          {item.price_ugx_per_kg.toLocaleString()}{' '}
+                          <span className="text-sm font-bold text-black">UGX / kg</span>
+                        </div>
+                        {/* Quantity */}
+                        <div className="text-sm font-extrabold text-[var(--color-text-secondary)] flex items-center gap-1 mt-0.5">
+                          <Scale size={15} className="text-[var(--color-brand-primary)]" />
+                          <span>Batch Size: <strong className="text-black">{item.quantity_kg.toLocaleString()} kg</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Lot Total Value */}
+                      <div className="sm:text-right">
+                        <div className="text-xs text-[var(--color-text-secondary)] uppercase font-bold">Estimated Lot Total</div>
+                        <div className="text-base font-extrabold text-[var(--color-action-primary)]">
+                          UGX {totalEstimatedValue.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Location & Poster Role */}
+                    <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)] mb-2.5">
+                      <div className="flex items-center gap-1">
+                        <MapPin size={14} className="text-[var(--color-brand-primary)]" />
+                        <span className="font-semibold text-black">{item.district} District</span>
+                        <span>•</span>
+                        <span>{item.role}</span>
+                      </div>
+                    </div>
+
+                    {/* Trade Notes / Availability */}
+                    {item.notes && (
+                      <p className="text-xs bg-[var(--color-surface-subtle)] p-2.5 rounded-md border border-[var(--color-border-subtle)] text-black mb-3">
+                        "{item.notes}"
+                      </p>
+                    )}
+
+                    {/* SCREEN 4: CONTACT REVEAL & SAFETY TIP */}
+                    <div>
+                      {!isContactRevealed ? (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleExpressInterest(item.id, item.contact.name)}
+                            className="btn-primary w-full text-sm"
+                          >
+                            <Phone size={16} />
+                            Express Interest & Reveal Contact
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-lg border-2 border-[var(--color-action-primary)] bg-[var(--color-surface-subtle)] space-y-2.5 animate-fadeIn">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-[var(--color-action-primary)] flex items-center gap-1">
+                              <CheckCircle2 size={16} /> Contact Details Revealed
+                            </span>
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[var(--color-brand-primary)] text-white">
+                              {item.contact.momo_network || 'Mobile Money'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-[var(--color-text-secondary)] block text-[10px] uppercase font-bold">Seller / Buyer Name:</span>
+                              <span className="font-extrabold text-sm text-black">{item.contact.name}</span>
+                            </div>
+                            <div>
+                              <span className="text-[var(--color-text-secondary)] block text-[10px] uppercase font-bold">Phone Number:</span>
+                              <span className="font-mono font-black text-base text-[var(--color-brand-primary)]">{item.contact.phone}</span>
+                            </div>
+                          </div>
+
+                          {/* Direct Actions: Call & WhatsApp */}
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <a
+                              href={`tel:${item.contact.phone.replace(/\s+/g, '')}`}
+                              className="btn-primary text-xs py-2"
+                            >
+                              <Phone size={14} /> Call Directly
+                            </a>
+                            <a
+                              href={`https://wa.me/${item.contact.phone.replace(/[^0-9]/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-secondary text-xs py-2 bg-white"
+                            >
+                              <MessageSquare size={14} /> WhatsApp
+                            </a>
+                          </div>
+
+                          {/* Safety Tip Box */}
+                          <div className="p-2 rounded bg-white border border-[var(--color-accent-amber)] text-[11px] text-[var(--color-text-secondary)] flex items-start gap-1.5">
+                            <ShieldAlert size={16} className="text-[var(--color-accent-amber)] shrink-0 mt-0.5" />
+                            <span>
+                              <strong>UCDA Safety Tip:</strong> Always agree on coffee grade, moisture level (12–13%), and certified weighing scale before sending Mobile Money.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                  </article>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* SCREEN 3: POST A LISTING (AI PASTE & REVIEW + MANUAL FORM)    */}
+        {/* ============================================================== */}
+        {activeTab === 'post' && (
+          <div className="space-y-4">
+            
+            {/* Post Header */}
+            <div className="card-highland">
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles size={20} className="text-[var(--color-accent-amber)]" />
+                <h2 className="font-extrabold text-xl text-[var(--color-brand-primary)]">
+                  Post Coffee Offer or Request
+                </h2>
+              </div>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+                Paste any informal WhatsApp message or SMS. Kahawa AI (Gemma 4) will automatically extract grade, variety, price, and quantity for your review.
+              </p>
+
+              {/* Sample 1-Tap Message Chips (including exact acceptance test) */}
+              <div className="p-2.5 rounded-md bg-[var(--color-surface-subtle)] border border-[var(--color-border-subtle)] mb-3">
+                <span className="text-[11px] font-black uppercase text-[var(--color-brand-primary)] block mb-1.5">
+                  Tap a sample message to test:
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setInformalInput("I have 300kg kiboko in Masaka, ready in 2 weeks, 4500 per kg")}
-                    className="text-left text-xs bg-cornsilk border border-saddlebrown px-2 py-1 rounded font-medium hover:bg-white"
+                    onClick={() => {
+                      const msg = "I have 300kg kiboko in Masaka, ready in 2 weeks, 4500 per kg";
+                      setInformalMessage(msg);
+                      handleExtractMessage(msg);
+                    }}
+                    className="text-left text-xs bg-white border border-[var(--color-border)] px-2.5 py-1.5 rounded-md font-bold hover:bg-[var(--color-canvas)]"
                   >
                     🎯 <strong className="underline">Acceptance Test:</strong> "I have 300kg kiboko in Masaka, ready in 2 weeks, 4500 per kg"
                   </button>
                   <button
                     type="button"
-                    onClick={() => setInformalInput("Urgent: Looking to buy 4000kg Arabica parchment in Mbale, willing to pay 12800 ugx per kg cash")}
-                    className="text-left text-xs bg-cornsilk border border-saddlebrown px-2 py-1 rounded font-medium hover:bg-white"
+                    onClick={() => {
+                      const msg = "Buying 5000kg Arabica parchment in Mbale, 12800 per kg cash upon delivery";
+                      setInformalMessage(msg);
+                      handleExtractMessage(msg);
+                    }}
+                    className="text-left text-xs bg-white border border-[var(--color-border)] px-2.5 py-1.5 rounded-md font-bold hover:bg-[var(--color-canvas)]"
                   >
-                    📦 Arabica Buyer (Mbale Mt Elgon)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInformalInput("Harvested 1500kg clean Robusta FAQ at farm in Mbarara. Selling at 11200 / kg")}
-                    className="text-left text-xs bg-cornsilk border border-saddlebrown px-2 py-1 rounded font-medium hover:bg-white"
-                  >
-                    🚜 Robusta FAQ Seller (Mbarara)
+                    📦 Arabica Parchment Buyer (Mbale)
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* Input Box for Informal Text */}
-            <div className={`p-3 rounded border-2 space-y-3 ${
-              sunlightMode ? 'bg-white border-black' : 'bg-ivory border-saddlebrown'
-            }`}>
-              <label className="block text-xs font-extrabold uppercase tracking-wide">
-                Informal Message / WhatsApp Trade Note:
-              </label>
-              <textarea
-                rows={3}
-                value={informalInput}
-                onChange={(e) => setInformalInput(e.target.value)}
-                placeholder="Example: I have 300kg kiboko in Masaka, ready in 2 weeks, 4500 per kg..."
-                className="w-full p-2.5 text-sm rounded border-2 border-saddlebrown bg-white text-black font-mono focus:bg-cornsilk"
-              />
-
-              {/* Extraction Feedback Notice */}
-              {extractionFeedback && (
-                <div className={`p-2.5 rounded text-xs border font-medium ${
-                  extractionFeedback.source.includes('Error') || extractionFeedback.source.includes('Manual')
-                    ? 'bg-linen text-maroon border-maroon'
-                    : 'bg-honeydew text-darkgreen border-darkgreen'
-                }`}>
-                  <div className="font-bold flex items-center gap-1">
-                    <CheckCircle2 size={14} />
-                    Engine: {extractionFeedback.source}
-                  </div>
-                  <div>{extractionFeedback.message}</div>
-                </div>
-              )}
+              {/* Large Paste Textarea */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black uppercase">
+                  Paste your message here:
+                </label>
+                <textarea
+                  rows={3}
+                  value={informalMessage}
+                  onChange={(e) => setInformalMessage(e.target.value)}
+                  placeholder="Example: I have 300kg kiboko in Masaka, ready in 2 weeks, 4500 per kg..."
+                  className="w-full p-3 rounded-md border-2 border-[var(--color-border)] bg-white text-base font-mono"
+                />
+              </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-3">
                 <button
                   type="button"
                   disabled={isExtracting}
-                  onClick={handleAiExtract}
-                  className={`flex-1 py-2.5 px-4 font-black rounded text-sm flex items-center justify-center gap-2 border-2 ${
-                    sunlightMode 
-                      ? 'bg-black text-white border-black hover:bg-gray-900' 
-                      : 'bg-forestgreen text-white border-forestgreen hover:bg-darkgreen'
-                  } disabled:opacity-50`}
+                  onClick={() => handleExtractMessage()}
+                  className="btn-primary flex-1 text-base"
                 >
                   {isExtracting ? (
                     <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      Structuring with AI...
+                      <RefreshCw size={18} className="animate-spin" />
+                      Extracting with AI...
                     </>
                   ) : (
                     <>
-                      <Sparkles size={16} />
-                      Convert with AI
+                      <Sparkles size={18} />
+                      Extract Listing
                     </>
                   )}
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleStartManual}
-                  className={`py-2.5 px-3 font-bold rounded text-xs border-2 ${
-                    sunlightMode
-                      ? 'bg-white text-black border-black hover:bg-gray-100'
-                      : 'bg-linen text-saddlebrown border-saddlebrown hover:bg-beige'
-                  }`}
+                  onClick={handleOpenManualForm}
+                  className="btn-secondary text-sm"
                 >
                   Manual Form
                 </button>
               </div>
+
+              {/* SYSTEM STATE: ERROR STATE */}
+              {extractionError && (
+                <div className="mt-3 p-3 rounded-md bg-[var(--color-surface-subtle)] border-2 border-[var(--color-danger)] text-xs text-[var(--color-danger)] font-bold flex items-center justify-between gap-2">
+                  <span>{extractionError}</span>
+                  <button
+                    onClick={handleOpenManualForm}
+                    className="underline text-black font-black"
+                  >
+                    Fill manually
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* STRUCTURED LISTING REVIEW & CONFIRMATION FORM */}
+            {/* REVIEW SCREEN: STRUCTURED FORM (AI OR MANUAL) */}
             {draftListing && (
-              <div className={`p-3.5 rounded border-2 space-y-3 ${
-                sunlightMode ? 'bg-white border-black' : 'bg-ivory border-darkgoldenrod'
-              }`}>
-                <div className="flex items-center justify-between pb-2 border-b border-saddlebrown">
+              <div className="card-highland space-y-4 border-2 border-[var(--color-brand-primary)] animate-fadeIn">
+                <div className="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
                   <div>
-                    <h3 className="font-black text-base text-saddlebrown flex items-center gap-1.5">
-                      <CheckCircle2 className="text-forestgreen" size={18} />
+                    <h3 className="font-black text-lg text-[var(--color-brand-primary)] flex items-center gap-1.5">
+                      <CheckCircle2 size={20} className="text-[var(--color-action-primary)]" />
                       Review & Confirm Structured Listing
                     </h3>
-                    <p className="text-[11px] text-darkslategray">
-                      Check that variety, grade, district, and price are accurate before posting.
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Review fields extracted by AI before publishing to the live board.
                     </p>
                   </div>
                   <button 
                     onClick={() => setDraftListing(null)}
-                    className="text-xs p-1 text-darkslategray hover:text-black font-bold"
+                    className="text-xs font-bold p-1 text-[var(--color-text-secondary)] hover:text-black"
                   >
-                    <X size={18} />
+                    <X size={20} />
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* Type: Selling vs Buying */}
+                  {/* Type */}
                   <div>
-                    <label className="font-bold block mb-1">Listing Type:</label>
+                    <label className="font-black block mb-1">Listing Type:</label>
                     <select
                       value={draftListing.type || 'selling'}
                       onChange={(e) => setDraftListing({ ...draftListing, type: e.target.value as ListingType })}
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-bold text-sm"
                     >
                       <option value="selling">Selling (Coffee for Sale)</option>
                       <option value="buying">Buying (Coffee Wanted)</option>
                     </select>
                   </div>
 
-                  {/* Variety: Robusta vs Arabica */}
+                  {/* Variety */}
                   <div>
-                    <label className="font-bold block mb-1">Coffee Variety:</label>
+                    <label className="font-black block mb-1">Coffee Variety:</label>
                     <select
                       value={draftListing.variety || 'Robusta'}
                       onChange={(e) => setDraftListing({ ...draftListing, variety: e.target.value as CoffeeVariety })}
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-bold text-sm"
                     >
                       <option value="Robusta">Robusta (Central & Western lowland)</option>
                       <option value="Arabica">Arabica (Elgon, Rwenzori, West Nile)</option>
@@ -605,13 +1000,13 @@ export default function App() {
                     </select>
                   </div>
 
-                  {/* Grade: Kiboko, FAQ, Parchment, Green Bean */}
+                  {/* Grade */}
                   <div>
-                    <label className="font-bold block mb-1">Grade / Form:</label>
+                    <label className="font-black block mb-1">Grade / Form:</label>
                     <select
                       value={draftListing.grade || 'kiboko'}
                       onChange={(e) => setDraftListing({ ...draftListing, grade: e.target.value as CoffeeGrade })}
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-bold text-sm"
                     >
                       <option value="kiboko">kiboko (dry cherry)</option>
                       <option value="FAQ">FAQ (fair average quality)</option>
@@ -621,9 +1016,9 @@ export default function App() {
                     </select>
                   </div>
 
-                  {/* Region: Central, Western, Eastern, Northern */}
+                  {/* Region */}
                   <div>
-                    <label className="font-bold block mb-1">Region:</label>
+                    <label className="font-black block mb-1">Region:</label>
                     <select
                       value={draftListing.region || 'Central'}
                       onChange={(e) => {
@@ -631,18 +1026,18 @@ export default function App() {
                         const defaultDist = UGANDA_REGIONS[newReg]?.[0] || 'Masaka';
                         setDraftListing({ ...draftListing, region: newReg, district: defaultDist });
                       }}
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-bold text-sm"
                     >
-                      <option value="Central">Central (Masaka, Luwero, Mubende)</option>
+                      <option value="Central">Central (Masaka, Luwero, Mukono)</option>
                       <option value="Western">Western (Mbarara, Kasese, Bushenyi)</option>
-                      <option value="Eastern">Eastern (Mbale, Kapchorwa, Elgon)</option>
+                      <option value="Eastern">Eastern (Mbale, Kapchorwa, Mt Elgon)</option>
                       <option value="Northern">Northern (Arua, Nebbi, West Nile)</option>
                     </select>
                   </div>
 
                   {/* District */}
                   <div>
-                    <label className="font-bold block mb-1">District:</label>
+                    <label className="font-black block mb-1">District:</label>
                     <input
                       type="text"
                       value={draftListing.district || ''}
@@ -655,27 +1050,27 @@ export default function App() {
                         }
                         setDraftListing({ ...draftListing, district: dist, region: reg });
                       }}
-                      placeholder="e.g. Masaka, Mbale, Kasese..."
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-semibold"
+                      placeholder="e.g. Masaka, Mbale..."
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-bold text-sm"
                     />
                   </div>
 
-                  {/* Quantity (KG) */}
+                  {/* Quantity */}
                   <div>
-                    <label className="font-bold block mb-1">Quantity (kg):</label>
+                    <label className="font-black block mb-1">Quantity (kg):</label>
                     <input
                       type="number"
                       min={1}
                       value={draftListing.quantity_kg ?? ''}
                       onChange={(e) => setDraftListing({ ...draftListing, quantity_kg: Number(e.target.value) })}
                       placeholder="e.g. 300"
-                      className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-black text-sm"
                     />
                   </div>
 
-                  {/* Price (UGX per kg) */}
+                  {/* Price per KG */}
                   <div className="sm:col-span-2">
-                    <label className="font-bold block mb-1">Price (UGX per kg):</label>
+                    <label className="font-black block mb-1">Price in UGX per kg:</label>
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
@@ -684,58 +1079,45 @@ export default function App() {
                         value={draftListing.price_ugx_per_kg ?? ''}
                         onChange={(e) => setDraftListing({ ...draftListing, price_ugx_per_kg: Number(e.target.value) })}
                         placeholder="e.g. 4500"
-                        className="w-full p-2 rounded border border-saddlebrown bg-white font-bold text-base"
+                        className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white font-black text-lg"
                       />
-                      <span className="text-xs font-bold text-darkslategray whitespace-nowrap">UGX / kg</span>
+                      <span className="text-sm font-extrabold text-[var(--color-brand-primary)] whitespace-nowrap">
+                        UGX / kg
+                      </span>
                     </div>
 
-                    {/* Calculated Total Batch Value */}
+                    {/* Auto Calculated Batch Total */}
                     {draftListing.quantity_kg && draftListing.price_ugx_per_kg && (
-                      <div className="mt-1.5 p-1.5 bg-cornsilk border border-saddlebrown rounded text-xs flex justify-between font-bold">
-                        <span>Estimated Total Value:</span>
-                        <span className="text-forestgreen">
+                      <div className="mt-1.5 p-2 bg-[var(--color-surface-subtle)] border border-[var(--color-border-subtle)] rounded-md flex justify-between items-center text-xs font-bold">
+                        <span>Calculated Total Batch Value:</span>
+                        <span className="text-[var(--color-action-primary)] text-sm font-black">
                           UGX {(draftListing.quantity_kg * draftListing.price_ugx_per_kg).toLocaleString()}
                         </span>
                       </div>
                     )}
                   </div>
 
-                  {/* Notes / Special Instructions */}
+                  {/* Notes / Availability */}
                   <div className="sm:col-span-2">
-                    <label className="font-bold block mb-1">Trade Notes / Timing:</label>
+                    <label className="font-black block mb-1">Notes / Availability Timing:</label>
                     <textarea
                       rows={2}
                       value={draftListing.notes || ''}
                       onChange={(e) => setDraftListing({ ...draftListing, notes: e.target.value })}
-                      placeholder="e.g. Ready in 2 weeks, sun-dried on tarpaulins, moisture tested below 13%..."
-                      className="w-full p-2 rounded border border-saddlebrown bg-white text-xs"
+                      placeholder="e.g. ready in 2 weeks, sun dried on tarpaulins..."
+                      className="w-full p-2.5 rounded-md border-2 border-[var(--color-border)] bg-white text-xs"
                     />
-                  </div>
-
-                  {/* Contact Summary (Read from profile) */}
-                  <div className="sm:col-span-2 p-2 bg-linen border border-saddlebrown rounded text-xs">
-                    <span className="font-bold block text-saddlebrown">Contact Details Attached to Listing:</span>
-                    <div className="text-darkslategray mt-0.5">
-                      {profile.name} • {profile.phone} • {profile.momo_network}
-                    </div>
-                    <span className="text-[10px] text-darkslategray italic block mt-0.5">
-                      (🔒 Protected: Phone stays masked on the board until another user clicks "Express interest")
-                    </span>
                   </div>
                 </div>
 
-                {/* Final Save Button */}
+                {/* Primary Button: Looks good, post it */}
                 <div className="pt-2">
                   <button
                     type="button"
-                    onClick={handleSaveListing}
-                    className={`w-full py-3 px-4 font-black rounded text-sm border-2 ${
-                      sunlightMode
-                        ? 'bg-black text-white border-black hover:bg-gray-900'
-                        : 'bg-forestgreen text-white border-darkgreen hover:bg-darkgreen'
-                    }`}
+                    onClick={handlePublishListing}
+                    className="btn-primary w-full text-base"
                   >
-                    Confirm & Post Listing to Board
+                    Looks Good, Post It
                   </button>
                 </div>
               </div>
@@ -745,463 +1127,139 @@ export default function App() {
         )}
 
         {/* ============================================================== */}
-        {/* TAB 2: BROWSE & FILTER LISTINGS BOARD                          */}
+        {/* SCREEN 5: MY LISTINGS (MANAGE POSTED COFFEE OFFERS)           */}
         {/* ============================================================== */}
-        {activeTab === 'board' && (
-          <div className="space-y-3">
-            
-            {/* Filter Bar - Mobile-First & High Contrast */}
-            <div className={`p-3 rounded border-2 space-y-2.5 ${
-              sunlightMode ? 'bg-white border-black' : 'bg-ivory border-saddlebrown'
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1 text-saddlebrown">
-                  <Filter size={14} /> Filter Coffee Listings
-                </span>
-                {(filterType !== 'all' || filterRegion !== 'all' || filterVariety !== 'all' || filterGrade !== 'all' || searchDistrict) && (
+        {activeTab === 'my-listings' && (
+          <div className="space-y-4">
+            <div className="card-highland">
+              <h2 className="font-extrabold text-xl text-[var(--color-brand-primary)] mb-1">
+                My Posted Listings
+              </h2>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-3">
+                Manage your active coffee offers. You can mark listings as completed or remove them once traded.
+              </p>
+
+              {myListings.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="font-bold text-sm text-[var(--color-text-secondary)] mb-3">
+                    You have not posted any coffee offers yet.
+                  </p>
                   <button
-                    onClick={() => {
-                      setFilterType('all');
-                      setFilterRegion('all');
-                      setFilterVariety('all');
-                      setFilterGrade('all');
-                      setSearchDistrict('');
-                    }}
-                    className="text-xs underline font-bold text-maroon hover:text-black"
+                    onClick={() => setActiveTab('post')}
+                    className="btn-primary text-sm"
                   >
-                    Reset Filters
+                    Post Your First Coffee Listing
                   </button>
-                )}
-              </div>
-
-              {/* Quick Type Tabs: All, Selling, Buying */}
-              <div className="grid grid-cols-3 gap-1">
-                {[
-                  { id: 'all', label: 'All Listings' },
-                  { id: 'selling', label: '🟢 For Sale' },
-                  { id: 'buying', label: '🔴 Coffee Wanted' }
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setFilterType(tab.id)}
-                    className={`py-1.5 px-2 text-xs font-black rounded border ${
-                      filterType === tab.id
-                        ? (sunlightMode ? 'bg-black text-white border-black' : 'bg-saddlebrown text-white border-saddlebrown')
-                        : (sunlightMode ? 'bg-white text-black border-black' : 'bg-cornsilk text-black border-saddlebrown hover:bg-beige')
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Secondary Select Dropdowns: Region, Variety, Grade */}
-              <div className="grid grid-cols-3 gap-1.5 text-xs">
-                {/* Region */}
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-darkslategray mb-0.5">Region:</label>
-                  <select
-                    value={filterRegion}
-                    onChange={(e) => setFilterRegion(e.target.value)}
-                    className="w-full p-1.5 rounded border border-saddlebrown bg-white text-black font-semibold text-xs"
-                  >
-                    <option value="all">All Regions</option>
-                    <option value="Central">Central</option>
-                    <option value="Western">Western</option>
-                    <option value="Eastern">Eastern</option>
-                    <option value="Northern">Northern</option>
-                  </select>
                 </div>
-
-                {/* Variety */}
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-darkslategray mb-0.5">Variety:</label>
-                  <select
-                    value={filterVariety}
-                    onChange={(e) => setFilterVariety(e.target.value)}
-                    className="w-full p-1.5 rounded border border-saddlebrown bg-white text-black font-semibold text-xs"
-                  >
-                    <option value="all">All Varieties</option>
-                    <option value="Robusta">Robusta</option>
-                    <option value="Arabica">Arabica</option>
-                  </select>
-                </div>
-
-                {/* Grade */}
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-darkslategray mb-0.5">Grade:</label>
-                  <select
-                    value={filterGrade}
-                    onChange={(e) => setFilterGrade(e.target.value)}
-                    className="w-full p-1.5 rounded border border-saddlebrown bg-white text-black font-semibold text-xs"
-                  >
-                    <option value="all">All Grades</option>
-                    <option value="kiboko">kiboko (dry cherry)</option>
-                    <option value="FAQ">FAQ (fair average)</option>
-                    <option value="parchment">parchment</option>
-                    <option value="green bean">green bean</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* District / Text Search */}
-              <div>
-                <input
-                  type="text"
-                  value={searchDistrict}
-                  onChange={(e) => setSearchDistrict(e.target.value)}
-                  placeholder="Search district, road, or cooperative (e.g. Masaka, Mbale, Bukakata)..."
-                  className="w-full p-2 text-xs rounded border border-saddlebrown bg-white text-black font-medium"
-                />
-              </div>
-            </div>
-
-            {/* Results Header Count */}
-            <div className="flex items-center justify-between text-xs px-1 font-bold text-darkslategray">
-              <span>Showing {filteredListings.length} of {listings.length} listings</span>
-              <span>Updated live in UGX</span>
-            </div>
-
-            {/* LISTINGS BOARD CARDS */}
-            {filteredListings.length === 0 ? (
-              <div className={`p-8 text-center rounded border-2 border-dashed ${
-                sunlightMode ? 'bg-white border-black' : 'bg-ivory border-saddlebrown'
-              }`}>
-                <p className="font-extrabold text-base mb-1">No coffee listings match these filters.</p>
-                <p className="text-xs text-darkslategray mb-3">
-                  Try adjusting the region or variety, or post a new listing.
-                </p>
-                <button
-                  onClick={() => {
-                    setFilterType('all');
-                    setFilterRegion('all');
-                    setFilterVariety('all');
-                    setFilterGrade('all');
-                    setSearchDistrict('');
-                  }}
-                  className="px-3 py-1.5 bg-saddlebrown text-white text-xs font-bold rounded"
-                >
-                  Clear All Filters
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredListings.map((item) => {
-                  const isContactRevealed = !!revealedContacts[item.id];
-                  const totalEst = item.quantity_kg * item.price_ugx_per_kg;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`coffee-card p-3.5 rounded border-2 transition-all ${
-                        sunlightMode 
-                          ? 'bg-white border-black' 
-                          : 'bg-ivory border-saddlebrown hover:border-darkgoldenrod'
-                      }`}
+              ) : (
+                <div className="space-y-3">
+                  {myListings.map(listing => (
+                    <div 
+                      key={listing.id}
+                      className="p-3.5 rounded-lg border-2 border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col sm:flex-row justify-between sm:items-center gap-2"
                     >
-                      {/* Top Header of Card: Type Badge, Role, Date */}
-                      <div className="flex items-center justify-between gap-1 mb-2">
-                        <div className="flex items-center gap-1.5">
-                          {item.type === 'selling' ? (
-                            <span className="badge-sell text-[11px] font-black uppercase px-2 py-0.5 rounded bg-darkgreen text-white">
-                              🟢 Coffee for Sale
-                            </span>
-                          ) : (
-                            <span className="badge-buy text-[11px] font-black uppercase px-2 py-0.5 rounded bg-maroon text-white">
-                              🔴 Wanted to Buy
-                            </span>
-                          )}
-
-                          <span className="text-[11px] font-bold text-darkslategray bg-linen px-1.5 py-0.5 rounded border border-saddlebrown">
-                            {item.role}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={listing.type === 'selling' ? 'badge-sell' : 'badge-buy'}>
+                            {listing.type === 'selling' ? 'Selling' : 'Buying'}
                           </span>
+                          <span className="font-black text-base">{listing.variety} ({listing.grade})</span>
                         </div>
-
-                        <span className="text-[10px] text-darkslategray font-medium">
-                          {item.district} ({item.region})
-                        </span>
-                      </div>
-
-                      {/* Main Title & Key Specs */}
-                      <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 pb-2 border-b border-dashed border-saddlebrown">
-                        <div>
-                          <h3 className="font-black text-lg text-black leading-tight">
-                            {item.quantity_kg.toLocaleString()} kg • {item.variety} ({item.grade})
-                          </h3>
-                          <div className="text-xs text-darkslategray font-medium flex items-center gap-1 mt-0.5">
-                            <MapPin size={13} className="text-forestgreen" />
-                            <strong>{item.district} District</strong>, {item.region} Uganda
-                          </div>
-                        </div>
-
-                        {/* Price Tag */}
-                        <div className="sm:text-right mt-1 sm:mt-0">
-                          <div className="text-lg font-black text-saddlebrown">
-                            UGX {item.price_ugx_per_kg.toLocaleString()}{' '}
-                            <span className="text-xs font-normal text-black">/ kg</span>
-                          </div>
-                          <div className="text-[11px] font-bold text-forestgreen">
-                            Lot Value: ~UGX {totalEst.toLocaleString()}
-                          </div>
+                        <div className="text-xs text-[var(--color-text-secondary)] font-medium">
+                          {listing.quantity_kg.toLocaleString()} kg • UGX {listing.price_ugx_per_kg.toLocaleString()} / kg • {listing.district}
                         </div>
                       </div>
 
-                      {/* Notes / Description */}
-                      {item.notes && (
-                        <p className="text-xs text-black mt-2 font-medium bg-cornsilk p-2 rounded border border-beige">
-                          "{item.notes}"
-                        </p>
-                      )}
-
-                      {/* CONTACT SECTION - Strictly Hidden Until "Express Interest" is Clicked */}
-                      <div className="mt-3 pt-2">
-                        {!isContactRevealed ? (
-                          <div className="bg-linen p-2.5 rounded border border-saddlebrown flex flex-col sm:flex-row items-center justify-between gap-2">
-                            <div className="text-xs">
-                              <span className="font-bold text-black block">
-                                Poster: {item.contact.name}
-                              </span>
-                              <span className="text-[11px] text-darkslategray">
-                                Payment: {item.contact.momo_network || 'Mobile Money'}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleExpressInterest(item.id, item.contact.name)}
-                              className={`w-full sm:w-auto px-4 py-2 font-black rounded text-xs flex items-center justify-center gap-1.5 border-2 ${
-                                sunlightMode
-                                  ? 'bg-black text-white border-black hover:bg-gray-800'
-                                  : 'bg-forestgreen text-white border-darkgreen hover:bg-darkgreen'
-                              }`}
-                            >
-                              <Phone size={14} />
-                              Express Interest & Reveal Contact
-                            </button>
-                          </div>
-                        ) : (
-                          /* REVEALED CONTACT DETAILS */
-                          <div className={`p-3 rounded border-2 ${
-                            sunlightMode ? 'bg-white border-black' : 'bg-honeydew border-darkgreen'
-                          }`}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-1 text-xs font-bold text-darkgreen">
-                                <CheckCircle2 size={16} />
-                                <span>Contact Details Revealed</span>
-                              </div>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-darkgreen text-white">
-                                {item.contact.momo_network || 'Mobile Money'}
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                              <div>
-                                <span className="text-darkslategray block text-[10px]">Contact Person:</span>
-                                <span className="font-bold text-sm text-black">{item.contact.name}</span>
-                              </div>
-                              <div>
-                                <span className="text-darkslategray block text-[10px]">Phone / Mobile Money:</span>
-                                <span className="font-mono font-black text-base text-saddlebrown">{item.contact.phone}</span>
-                              </div>
-                            </div>
-
-                            {/* Direct Connect Buttons: Tel & WhatsApp */}
-                            <div className="mt-2.5 pt-2 border-t border-forestgreen flex gap-2">
-                              <a
-                                href={`tel:${item.contact.phone.replace(/\s+/g, '')}`}
-                                className="flex-1 py-2 text-center text-xs font-black rounded bg-forestgreen text-white border border-darkgreen flex items-center justify-center gap-1.5"
-                              >
-                                <Phone size={13} />
-                                Call Directly
-                              </a>
-                              <a
-                                href={`https://wa.me/${item.contact.phone.replace(/[^0-9]/g, '')}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-1 py-2 text-center text-xs font-black rounded bg-saddlebrown text-white border border-black flex items-center justify-center gap-1.5"
-                              >
-                                <MessageSquare size={13} />
-                                WhatsApp
-                              </a>
-                            </div>
-                          </div>
-                        )}
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <button
+                          onClick={() => handleDeleteListing(listing.id)}
+                          className="px-3 py-1.5 rounded-md border border-[var(--color-danger)] text-[var(--color-danger)] font-bold text-xs hover:bg-[var(--color-surface-subtle)] flex items-center gap-1"
+                        >
+                          <Trash2 size={13} /> Remove
+                        </button>
                       </div>
-
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
 
-            {/* Bottom Reset Data Link for Testing */}
-            <div className="pt-4 pb-2 text-center">
-              <button
-                type="button"
-                onClick={handleResetData}
-                className="text-xs text-darkslategray underline hover:text-black font-semibold"
-              >
-                Reset board to original 8 Ugandan mock listings
-              </button>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setActiveTab('post')}
+                      className="btn-primary w-full text-sm"
+                    >
+                      Post Another Coffee Listing
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-
           </div>
         )}
 
       </main>
 
       {/* ============================================================== */}
-      {/* ROLE SELECTION & SIMPLE PROFILE MODAL                         */}
+      {/* SCREEN 7: BOTTOM NAVIGATION BAR (MAXIMUM 4 ITEMS FOR MOBILE)  */}
       {/* ============================================================== */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
-          <div className={`w-full max-w-md rounded-lg border-2 p-4 max-h-[90vh] overflow-y-auto ${
-            sunlightMode ? 'bg-white text-black border-black' : 'bg-ivory text-black border-saddlebrown'
-          }`}>
-            <div className="flex items-center justify-between pb-2 border-b border-saddlebrown">
-              <div className="flex items-center gap-1.5">
-                <User className="text-saddlebrown" size={20} />
-                <h2 className="font-black text-base">Your KawaLink Profile</h2>
-              </div>
-              <button 
-                onClick={() => setShowProfileModal(false)}
-                className="p-1 text-darkslategray hover:text-black font-bold"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--color-surface)] border-t-2 border-[var(--color-brand-primary)] shadow-lg">
+        <div className="max-w-md mx-auto grid grid-cols-4 py-1.5 px-2">
+          {/* Tab 1: Home */}
+          <button
+            onClick={() => setActiveTab('home')}
+            className={`flex flex-col items-center justify-center py-1 rounded-md text-xs font-bold transition-colors ${
+              activeTab === 'home'
+                ? 'text-[var(--color-brand-primary)] font-black'
+                : 'text-[var(--color-text-secondary)] hover:text-black'
+            }`}
+          >
+            <Home size={20} className={activeTab === 'home' ? 'stroke-[2.5]' : ''} />
+            <span className="mt-0.5">Home</span>
+          </button>
 
-            <p className="text-xs text-darkslategray my-2">
-              Select your role in the Ugandan coffee value chain. Your contact details will automatically be attached to your listings.
-            </p>
+          {/* Tab 2: Post */}
+          <button
+            onClick={() => setActiveTab('post')}
+            className={`flex flex-col items-center justify-center py-1 rounded-md text-xs font-bold transition-colors ${
+              activeTab === 'post'
+                ? 'text-[var(--color-brand-primary)] font-black'
+                : 'text-[var(--color-text-secondary)] hover:text-black'
+            }`}
+          >
+            <PlusCircle size={20} className={activeTab === 'post' ? 'stroke-[2.5]' : ''} />
+            <span className="mt-0.5">Post</span>
+          </button>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setShowProfileModal(false);
-                showToast(`Profile updated as ${profile.role} in ${profile.district}!`);
-              }}
-              className="space-y-3 text-xs"
-            >
-              {/* Role Selection */}
-              <div>
-                <label className="font-extrabold block mb-1">Select Value Chain Role:</label>
-                <select
-                  value={profile.role}
-                  onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-bold text-sm"
-                >
-                  <option value="Farmer / Smallholder">Farmer / Smallholder (Coffee Grower)</option>
-                  <option value="Coffee Buyer / Exporter">Coffee Buyer / Exporter</option>
-                  <option value="Cooperative Union">Cooperative Union / Society</option>
-                  <option value="Trader / Aggregator">Trader / Middleman / Aggregator</option>
-                  <option value="Input / Equipment Supplier">Input / Equipment Supplier</option>
-                  <option value="Extension Officer">Extension Officer / Agronomist</option>
-                  <option value="Stakeholder / NGO">Stakeholder / NGO / Certifier</option>
-                </select>
-              </div>
+          {/* Tab 3: My Listings */}
+          <button
+            onClick={() => setActiveTab('my-listings')}
+            className={`flex flex-col items-center justify-center py-1 rounded-md text-xs font-bold transition-colors relative ${
+              activeTab === 'my-listings'
+                ? 'text-[var(--color-brand-primary)] font-black'
+                : 'text-[var(--color-text-secondary)] hover:text-black'
+            }`}
+          >
+            <Layers size={20} className={activeTab === 'my-listings' ? 'stroke-[2.5]' : ''} />
+            <span className="mt-0.5">My Listings</span>
+            {myListings.length > 0 && (
+              <span className="absolute top-1 right-5 w-4 h-4 rounded-full bg-[var(--color-action-primary)] text-white text-[9px] flex items-center justify-center font-bold">
+                {myListings.length}
+              </span>
+            )}
+          </button>
 
-              {/* Name / Business Handle */}
-              <div>
-                <label className="font-extrabold block mb-1">Name or Trader Handle:</label>
-                <input
-                  type="text"
-                  required
-                  value={profile.name}
-                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  placeholder="e.g. Masaka Coffee Grower #14"
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-semibold"
-                />
-              </div>
-
-              {/* Region */}
-              <div>
-                <label className="font-extrabold block mb-1">Region:</label>
-                <select
-                  value={profile.region}
-                  onChange={(e) => {
-                    const newReg = e.target.value as UgandaRegion;
-                    const defaultDist = UGANDA_REGIONS[newReg]?.[0] || 'Masaka';
-                    setProfile({ ...profile, region: newReg, district: defaultDist });
-                  }}
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
-                >
-                  <option value="Central">Central (Masaka, Luwero, Mukono, Kampala)</option>
-                  <option value="Western">Western (Mbarara, Kasese, Bushenyi)</option>
-                  <option value="Eastern">Eastern (Mbale, Kapchorwa, Mt Elgon)</option>
-                  <option value="Northern">Northern (Arua, Nebbi, West Nile)</option>
-                </select>
-              </div>
-
-              {/* District */}
-              <div>
-                <label className="font-extrabold block mb-1">District:</label>
-                <input
-                  type="text"
-                  required
-                  value={profile.district}
-                  onChange={(e) => setProfile({ ...profile, district: e.target.value })}
-                  placeholder="e.g. Masaka, Mbale, Kasese, Arua..."
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-semibold"
-                />
-              </div>
-
-              {/* Phone / Mobile Money Number */}
-              <div>
-                <label className="font-extrabold block mb-1">Phone Number (Calls & WhatsApp):</label>
-                <input
-                  type="tel"
-                  required
-                  value={profile.phone}
-                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                  placeholder="+256 772 000 000"
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-mono font-bold"
-                />
-              </div>
-
-              {/* Mobile Money Provider */}
-              <div>
-                <label className="font-extrabold block mb-1">Primary Mobile Money Network:</label>
-                <select
-                  value={profile.momo_network}
-                  onChange={(e) => setProfile({ ...profile, momo_network: e.target.value as any })}
-                  className="w-full p-2 rounded border border-saddlebrown bg-white font-bold"
-                >
-                  <option value="MTN MoMo">MTN MoMo</option>
-                  <option value="Airtel Money">Airtel Money</option>
-                  <option value="Both">Both MTN & Airtel</option>
-                  <option value="Cash / Bank">Cash / Bank Transfer</option>
-                </select>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className={`w-full py-2.5 font-black rounded text-sm border-2 ${
-                    sunlightMode 
-                      ? 'bg-black text-white border-black' 
-                      : 'bg-forestgreen text-white border-darkgreen hover:bg-darkgreen'
-                  }`}
-                >
-                  Save Profile
-                </button>
-              </div>
-            </form>
-          </div>
+          {/* Tab 4: Profile */}
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`flex flex-col items-center justify-center py-1 rounded-md text-xs font-bold transition-colors ${
+              activeTab === 'profile'
+                ? 'text-[var(--color-brand-primary)] font-black'
+                : 'text-[var(--color-text-secondary)] hover:text-black'
+            }`}
+          >
+            <User size={20} className={activeTab === 'profile' ? 'stroke-[2.5]' : ''} />
+            <span className="mt-0.5">Profile</span>
+          </button>
         </div>
-      )}
-
-      {/* FOOTER */}
-      <footer className="max-w-2xl mx-auto px-3 mt-8 pt-4 border-t border-saddlebrown text-[11px] text-darkslategray flex flex-col sm:flex-row items-center justify-between gap-2">
-        <div>
-          <span className="font-bold text-saddlebrown">KawaLink Uganda</span> • Low-bandwidth coffee trading protocol
-        </div>
-        <div className="flex items-center gap-2">
-          <span>⚡ High-Contrast Sunlight Safe</span>
-          <span>•</span>
-          <span>🔒 Protected Contacts</span>
-        </div>
-      </footer>
+      </nav>
 
     </div>
   );
