@@ -1,0 +1,6 @@
+{
+  "name": "KawaLink Uganda",
+  "description": "Mobile-first coffee marketplace connecting Ugandan farmers, cooperatives, buyers, and suppliers with AI-assisted listing creation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
